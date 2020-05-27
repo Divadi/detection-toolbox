@@ -61,9 +61,69 @@ def draw_lidar(
 		figure=fig
 	)
 
+	return fig
+
+'''
+Input:
+	objects: KittiLabel object
+	calib: Calibration object
+	fig: mayavi figure object
 	
+	The goal of this function is to display only specific boxes in objects and be able to control what color each box is.
+	If color_func is None, all boxes are displayed & default_color is used for all.
+	if color_func is not None, it should be a function that takes in (index in objects.labels, label: SingleLabel) and
+		returns either "None" or a tuple denoting the color the object should be displayed with.
+		If it returns None for a label, the box is not displayed for that object/label
+	text_func has the same inputs, but should output a string or None
+'''
+def draw_3d_boxes_from_objects_advanced(
+	objects,
+	calib,
+	fig,
+	default_color=(0, 1, 0), #! default color is green
+	color_func=None,
+	text_func=None
+):
+	from mayavi import mlab
+	mlab.options.offscreen = True
+
+	color_dict = dict()
+
+	for label_ind, label in enumerate(objects):
+		if color_func is not None:
+			color = color_func(label_ind, label)
+			if color is None:
+				continue
+		else:
+			color = default_color
+
+		if text_func is not None:
+			text = text_func(label_ind, label)
+			if text is None:
+				text = ""
+		else:
+			text = ""
+
+		corners_3d_rect = label.compute_box_3d() #! Gets corners of 3d box
+		corners_3d_velo = calib.project_rect_to_velo(corners_3d_rect)
+
+		if color not in color_dict.keys():
+			color_dict[color] = {
+				"boxes": [],
+				"texts": [],
+				"tmp": []
+			}
+		
+		color_dict[color]['boxes'].append(corners_3d_velo)
+		color_dict[color]['texts'].append(text)
+		color_dict[color]['tmp'].append(label)
+
+	for color, val in color_dict.items():
+		draw_boxes_3d(val['boxes'], fig, box_color=color, text_color=color, text_list=val['texts'])
 
 	return fig
+
+
 '''
 #! objects is type KittiLabel
 #! calib is type Calibration
@@ -74,7 +134,9 @@ def draw_boxes_from_objects(
 	objects,
 	calib,
 	fig,
-	occ_thresh=0.7
+	occ_thresh=0.7,
+	categories=["Car", "Pedestrian", "Cyclist", "Motorcycle", "Undefined"],
+	text_func=None
 ):
 	from mayavi import mlab
 	mlab.options.offscreen = True
@@ -92,7 +154,7 @@ def draw_boxes_from_objects(
 
 	for label in objects:
 		real_index += 1
-		if label.occlusion > occ_thresh:
+		if label.occlusion > occ_thresh or label.type not in categories:
 			continue
 		corners_3d_rect = label.compute_box_3d() #! Gets corners of 3d box
 		corners_3d_velo = calib.project_rect_to_velo(corners_3d_rect)
@@ -100,9 +162,15 @@ def draw_boxes_from_objects(
 		all_boxes.append(corners_3d_velo)
 
 		if objects.gt:
-			all_text.append("v{}_{}".format(objects.view, real_index))
+			if text_func is None:
+				all_text.append("v{}_{}".format(objects.view, real_index))
+			else:
+				all_text.append(str(text_func(label)))
 		else:
-			all_text.append(str("{:.2f}".format(label.score)))
+			if text_func is None:
+				all_text.append("{:.2f}".format(label.score))
+			else:
+				all_text.append(str(text_func(label)))
 
 	if objects.gt:
 		box_color = text_color = (0, 1, 0) #! green gt boxes

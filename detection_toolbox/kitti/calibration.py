@@ -35,9 +35,9 @@ class Calibration(object):
     # =========================== 
     # ------- 3d to 3d ---------- 
     # =========================== 
-    # def project_velo_to_ref(self, pts_3d_velo):
-    #     pts_3d_velo = self.cart2hom(pts_3d_velo) # nx4
-    #     return np.dot(pts_3d_velo, np.transpose(self.V2C))
+    def project_velo_to_ref(self, pts_3d_velo):
+        pts_3d_velo = self.cart2hom(pts_3d_velo) # nx4
+        return np.dot(pts_3d_velo, np.transpose(self.V2C))
 
     def project_ref_to_velo(self, pts_3d_ref):
         pts_3d_ref = self.cart2hom(pts_3d_ref) # nx4
@@ -47,9 +47,9 @@ class Calibration(object):
         ''' Input and Output are nx3 points '''
         return np.dot(np.linalg.inv(self.R0), pts_3d_rect.T).T
     
-    # def project_ref_to_rect(self, pts_3d_ref):
-    #     ''' Input and Output are nx3 points '''
-    #     return np.transpose(np.dot(self.R0, np.transpose(pts_3d_ref)))
+    def project_ref_to_rect(self, pts_3d_ref):
+        ''' Input and Output are nx3 points '''
+        return np.transpose(np.dot(self.R0, np.transpose(pts_3d_ref)))
  
     def project_rect_to_velo(self, pts_3d_rect):
         ''' Input: nx3 points in rect camera coord.
@@ -58,29 +58,29 @@ class Calibration(object):
         pts_3d_ref = self.project_rect_to_ref(pts_3d_rect)
         return self.project_ref_to_velo(pts_3d_ref)
 
-    # def project_velo_to_rect(self, pts_3d_velo):
-    #     pts_3d_ref = self.project_velo_to_ref(pts_3d_velo)
-    #     return self.project_ref_to_rect(pts_3d_ref)
+    def project_velo_to_rect(self, pts_3d_velo):
+        pts_3d_ref = self.project_velo_to_ref(pts_3d_velo)
+        return self.project_ref_to_rect(pts_3d_ref)
 
     # =========================== 
     # ------- 3d to 2d ---------- 
     # =========================== 
-    # def project_rect_to_image(self, pts_3d_rect):
-    #     ''' Input: nx3 points in rect camera coord.
-    #         Output: nx2 points in image2 coord.
-    #     '''
-    #     pts_3d_rect = self.cart2hom(pts_3d_rect)
-    #     pts_2d = np.dot(pts_3d_rect, np.transpose(self.P)) # nx3
-    #     pts_2d[:,0] /= pts_2d[:,2]
-    #     pts_2d[:,1] /= pts_2d[:,2]
-    #     return pts_2d[:,0:2]
+    def project_rect_to_image(self, pts_3d_rect, view):
+        ''' Input: nx3 points in rect camera coord.
+            Output: nx2 points in image2 coord.
+        '''
+        pts_3d_rect = self.cart2hom(pts_3d_rect)
+        pts_2d = np.dot(pts_3d_rect, np.transpose(getattr(self, "P" + str(view)))) # nx3
+        pts_2d[:,0] /= pts_2d[:,2]
+        pts_2d[:,1] /= pts_2d[:,2]
+        return pts_2d[:,0:2]
     
-    # def project_velo_to_image(self, pts_3d_velo):
-    #     ''' Input: nx3 points in velodyne coord.
-    #         Output: nx2 points in image2 coord.
-    #     '''
-    #     pts_3d_rect = self.project_velo_to_rect(pts_3d_velo)
-    #     return self.project_rect_to_image(pts_3d_rect)
+    def project_velo_to_image(self, pts_3d_velo, view):
+        ''' Input: nx3 points in velodyne coord.
+            Output: nx2 points in image2 coord.
+        '''
+        pts_3d_rect = self.project_velo_to_rect(pts_3d_velo)
+        return self.project_rect_to_image(pts_3d_rect)
 
     # # =========================== 
     # # ------- 2d to 3d ---------- 
