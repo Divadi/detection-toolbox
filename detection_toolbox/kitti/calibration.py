@@ -9,6 +9,8 @@ class Calibration(object):
         lines = open(calib_file_path, "r").readlines()
         for line in lines:
             line = line.strip()
+            if line == '':
+                continue
             key, val = line.split(":", 1)
             val = np.array(val.strip().split(" "), dtype=np.float32)
 

@@ -792,20 +792,32 @@ def clean_data(gt_anno, dt_anno, current_class, difficulty, extra_info_single):
 
 
         ignore = False
-        if (curr_metric == 0 or curr_metric == 1): #! 2d bbox or bev
-            if ((gt_anno["occluded"][i] > MAX_OCCLUSION[difficulty])
+        if ((gt_anno["occluded"][i] > MAX_OCCLUSION[difficulty])
                 or (gt_anno["truncated"][i] > MAX_TRUNCATION[difficulty])
-                or (height <= MIN_HEIGHT[difficulty])
-                or (gt_extra_info_single["distance"][i] > MAX_DISTANCE[difficulty])):
+                or (height <= MIN_HEIGHT[difficulty])):
+                
+            ignore = True
+        
+        # if ((gt_extra_info_single["distance"][i] > MAX_DISTANCE[difficulty])
+        #     or (gt_extra_info_single["num_points"][i] < MIN_POINTS_THRESHOLD)):
 
-                ignore = True
+        #     ignore = True
+        
+        # if (curr_metric == 0 or curr_metric == 1 or curr_metric == 2): #! 2d bbox or bev
+        # # if (1 == 2):
+        #     if ((gt_anno["occluded"][i] > MAX_OCCLUSION[difficulty])
+        #         or (gt_anno["truncated"][i] > MAX_TRUNCATION[difficulty])
+        #         or (height <= MIN_HEIGHT[difficulty])
+        #         or (gt_extra_info_single["distance"][i] > MAX_DISTANCE[difficulty])):
 
-        else: #! 3d
-            if ((gt_extra_info_single["distance"][i] > MAX_DISTANCE[difficulty])
-                or (gt_extra_info_single["num_points"][i] < MIN_POINTS_THRESHOLD)):
-                # or gt_anno["occluded"][i] == 1): #? GET RID OF THIS TODO:
+        #         ignore = True
 
-                ignore = True
+        # else: #! 3d
+            # if ((gt_extra_info_single["distance"][i] > MAX_DISTANCE[difficulty])
+            #     or (gt_extra_info_single["num_points"][i] < MIN_POINTS_THRESHOLD)):
+            #     # or gt_anno["occluded"][i] == 1): #? GET RID OF THIS TODO:
+
+            #     ignore = True
 
         # if ((gt_anno["occluded"][i] > MAX_OCCLUSION[difficulty])
         #     or (gt_anno["truncated"][i] > MAX_TRUNCATION[difficulty])
@@ -876,7 +888,9 @@ def clean_data(gt_anno, dt_anno, current_class, difficulty, extra_info_single):
         ! Note that this does still include detections of other classes
         '''
         # or (curr_metric == 2 and dt_extra_info_single["distance"][i] > MAX_DISTANCE[difficulty])
-        if height < MIN_HEIGHT[difficulty] or (curr_metric == 2 and dt_extra_info_single["distance"][i] > MAX_DISTANCE[difficulty]) :
+        # if height < MIN_HEIGHT[difficulty] or (curr_metric == 2 and dt_extra_info_single["distance"][i] > MAX_DISTANCE[difficulty]) :
+        #     ignored_dt.append(1)
+        if height < MIN_HEIGHT[difficulty]:
             ignored_dt.append(1)
         #! detection matches class, keep
         elif valid_class == 1:
@@ -1640,11 +1654,17 @@ def eval_class(gt_annos,
     return ret_dict
 
 
-def get_mAP_v2(prec):
+def get_mAP_R11(prec):
     sums = 0
     for i in range(0, prec.shape[-1], 4):
         sums = sums + prec[..., i]
     return sums / 11 * 100
+
+def get_mAP_R40(prec):
+    sums = 0
+    for i in range(1, prec.shape[-1]):
+        sums = sums + prec[..., i]
+    return sums / 40 * 100
 
 
 def do_eval_v2(gt_annos,
@@ -1776,14 +1796,15 @@ Args:
                         2 -> 3d
         or (# overall evaluation levels, 3, len(current_classes)). Same as above but the first dimension denotes the number
         of overall rounds of evaluation we do. For reference, the first case is puffed up to (1, 3, len(current_classes)).
-    
+    recall_positions_40: Whether to use 40 recall positions or 11. Default 40, because KITTI is 40
 '''
 def kitti_eval(
     gt_annos,
     dt_annos,
     extra_info,
     current_classes,
-    IoUs
+    IoUs,
+    recall_positions_40=True 
 ):
     try:
         assert len(gt_annos) == len(dt_annos)
@@ -1844,16 +1865,22 @@ def kitti_eval(
     )
     dprint("Done generating metrics.")
 
+    if recall_positions_40:
+        get_mAP = get_mAP_R40
+    else:
+        get_mAP = get_mAP_R11
+
     result = ''
+    result += "Using mAP: {}\n".format(get_mAP.__name__)
     for j, curcls in enumerate(current_classes):
         # mAP threshold array: [num_minoverlap, metric, class]
         # mAP result: [num_class, num_diff, num_minoverlap]
         for i in range(IoUs.shape[0]):
-            mAPbbox = get_mAP_v2(metrics["bbox"]["precision"][j, :, i])
+            mAPbbox = get_mAP(metrics["bbox"]["precision"][j, :, i])
             mAPbbox = ", ".join(f"{v:.2f}" for v in mAPbbox) # ! This is what we care about
-            mAPbev = get_mAP_v2(metrics["bev"]["precision"][j, :, i])
+            mAPbev = get_mAP(metrics["bev"]["precision"][j, :, i])
             mAPbev = ", ".join(f"{v:.2f}" for v in mAPbev)
-            mAP3d = get_mAP_v2(metrics["3d"]["precision"][j, :, i])
+            mAP3d = get_mAP(metrics["3d"]["precision"][j, :, i])
             mAP3d = ", ".join(f"{v:.2f}" for v in mAP3d)
             result += print_str(
                 (f"{class_to_name[curcls]} "
@@ -1862,7 +1889,7 @@ def kitti_eval(
             result += print_str(f"bev  AP:{mAPbev}")
             result += print_str(f"3d   AP:{mAP3d}")
             if compute_aos:
-                mAPaos = get_mAP_v2(metrics["bbox"]["orientation"][j, :, i])
+                mAPaos = get_mAP(metrics["bbox"]["orientation"][j, :, i])
                 mAPaos = ", ".join(f"{v:.2f}" for v in mAPaos)
                 result += print_str(f"aos  AP:{mAPaos}")
 

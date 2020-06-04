@@ -3,10 +3,10 @@ import imgaug
 from imgaug.augmentables.bbs import BoundingBox, BoundingBoxesOnImage
 
 class SingleLabel(object):
-    __slots__ = ['gt', 'garbage', 'type', 'truncation', 'occlusion', 'alpha',
-                 'xmin', 'ymin', 'xmax', 'ymax', 'box2d',
-                 'h', 'w', 'l', 't', 'ry', 'score',
-                 'distance', 'num_points']
+    # __slots__ = ['gt', 'garbage', 'type', 'truncation', 'occlusion', 'alpha',
+    #              'xmin', 'ymin', 'xmax', 'ymax', 'box2d',
+    #              'h', 'w', 'l', 't', 'ry', 'score',
+    #              'distance', 'num_points']
     def __init__(self, label_line, gt):
         self.gt = gt
         self._process_label_line(label_line)
@@ -130,11 +130,21 @@ class KittiLabel(object):
     
     def _read_num_points_file_path(self, num_points_file_path):
         num_points = [int(line.strip()) for line in open(num_points_file_path, "r").readlines()]
-        
-        assert len(num_points) == len(self.labels)
 
-        for label_ind, label in enumerate(self.labels):
-            label.num_points = num_points[label_ind]
+        self.add_label_attribute("num_points", num_points)
+        
+        # assert len(num_points) == len(self.labels)
+
+        # for label_ind, label in enumerate(self.labels):
+        #     label.num_points = num_points[label_ind]
+
+    #! remove labels with score < score_thresh
+    #! Returns num removed
+    def filter_score(self, score_thresh):
+        assert not self.gt
+        prev_num = len(self.labels)
+        self.labels = list(filter(lambda l: l.score >= score_thresh, self.labels))
+        return len(self.labels) - prev_num
 
     '''
     Writes contents of label to file
@@ -229,6 +239,14 @@ class KittiLabel(object):
     def get_imgaug_bboxes(self, img_shape=(720, 1920)):
         bboxes = [label.get_imgaug_bbox() for label in self.labels]
         return BoundingBoxesOnImage(bboxes, shape=img_shape)
+
+    #! Adds attribute of attribute name to each label
+    #! Attribute vals should be a list
+    def add_label_attribute(self, attribute_name, attribute_vals):
+        assert len(self.labels) == len(attribute_vals)
+
+        for label, attribute_val in zip(self.labels, attribute_vals):
+            setattr(label, attribute_name, attribute_val)
 
 
     def __len__(self):
