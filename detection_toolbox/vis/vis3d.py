@@ -10,7 +10,8 @@ def draw_lidar(
 	ptcolor=(1, 1, 1), 
 	fig=None,
 	bgcolor=(0, 0, 0), 
-	fig_size=(8000, 4000)
+	fig_size=(8000, 4000),
+	draw_range_squares=False #! if you want to also see square boxes at 40, 80, 120 meters
 ):
 	from mayavi import mlab
 	mlab.options.offscreen = True
@@ -48,6 +49,18 @@ def draw_lidar(
 			figure=fig,
 			scale=(0.5, 0.5, 0.5)
 		)
+
+	if draw_range_squares:
+		for i in [40, 80, 120]:
+			mlab.plot3d(
+				[i, i, -i, -i, i],
+				[i, -i, -i, i, i],
+				[0, 0, 0, 0, 0],
+				color=(0.2, 0.2, 0.2),
+				line_width=6,
+				tube_radius=None,
+				figure=fig
+			)
 	
 	#! Draw point cloud
 	mlab.points3d(

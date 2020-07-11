@@ -652,6 +652,72 @@ def get_mAP(prec):
 #? So it's not necessarily that the returned thresholds are 1.0, 0.9, 0.8, ... 0 if um_sample_pts = 11
 #? But it's scores[len(scores) * 0 / 10], scores[len(scores) * 1 /10], .... i think...
 #? Well all that really matters is that the thresholds returns at the end are length num_sample pts sorted decreasing
+#! Okay, so it's finding the score thresholds that correspond to the 41 recall positions.
+'''
+Here's a walk through.
+First, note that the big if statement w/ continue triggers if the current recall is closer to right recall
+than left recall. So, if current recall is closer to LEFT recall, we store the left recall's corresponding 
+threshold. Why? Because it means we find the threshold corresponding best to the current recall position.
+
+Better general mental image? Think of a p/r curve, y-axis p, x-axis r. We're trying to find the area under 
+the curve. Since we can't take the integral directly, we approximate it. We actually use right riemann sum
+here. we ignore curr_recall = 0, since we don't use it to calculate final mAP anyway. Now what is the prec.
+corr. to 1/40 recall? Well we need a way to filter the detections by finding a threshold that causes 1/40
+recall. So we go through the for loop, and we append a threshold that does so, and so on.
+Lastly, to compute the actual map, we add up 1/40 to 40/40 recall positions and divide by 40. Visually,
+think of this as adding up the areas of the boxes, with top right corner on the curve at 1/40 to 40/40 recall
+positions, and the boxes have width 1/40. 
+
+Now what if we fed in ground truth boxes as the predictions, all with score 1?
+Then the thresholds array would be entirely populated with 1. Then since precision at every threshold is 1,
+the overall score would be 1 (100%).
+
+Now why is this the metric everyone uses? What is the significance of a p/r curve? 
+An alternative would be to directly toss out "score" and compute recall. However, then there is no measure
+of how many false positives we have. Then we could report precision as well. Then we run into "What is a good
+balance of precision & recall scores?" We could ensure precision = 1 but recall might be 0, and vice versa.
+Then the idea of "well, since p & r are correlated to some extent, we can graph it. What accounts for different
+combinations of p & r values? p & r values change based on filtering detections, and the answer ends up being
+assigning a "confidence" to each detection. And as such, wehave the p/r curve.
+
+How to interpret a p/r curve?
+An idea p/r curve would just be p = 1 for all recall values. 
+If the p/r curve drops early (precision drops even for low recall values), this means we have some high-
+confidence false positives. Why? Because low recall <=> high confidence threshold, which should have high
+precision. We can then filter the detections at that threhsold and see what false positives there are.
+Look at recall value where p = 0. Ideally, it should be 1. Otherwise, it means we're always missing some 
+ground truth (or they're being assigned super low confidence, so they are lost amongst low-confidence false 
+positives).
+Odd case: the right side of the curve slowly starts going down, but very suddenly drops to p = 0. (as in if
+you were to continue drawing the curve, it feels like it'll go on for a little longer, but it doesn't). Then
+there is a chance that there is a confidence threshold filtering of the detections done, with a too-aggressive
+threshold clipping out potentially good detections.
+
+How is p/r curve affected by manually truncation of confidence? Aka, filter out all detections <0.3 confidence.
+a) This frankly only affects the right-most end of the curve, because the left side corresponds to higher
+    confidence detections only.
+b) Will throwing in a bunch of low-confidence detections increase performance? Yup.
+    Case 1) The detector is missing a bunch of boxes entirely. Let's say 10%.
+        Then, the rightmost-part flatlines at p = 0. Why? When presented the question "What is the precision
+        when recall is 0.95?", the response is "well we can't achieve recall 0.95, so I guess precision would
+        be 0." So, you get penalized.
+        Now here, if we toss in a bunch of low-confidence detections, the detector might miss fewer boxes.
+        Let's say it misses 3% now. When presented with the same question, the response is "well we can now
+        achieve recall 0.95, so precision isn't automatically 0. But in achieving this, we got a lot of
+        false positives that were rightly assigned low confidence, so precision will be quite low here, maybe
+        like 0.1" This is still higher than 0.
+    Case 2) The detector is missing some boxes but not that much. Let's say 3%. 
+        Truth: the current detections all of confidence >= 0.3.
+        Truth: Adding detections < 0.3 confidence WILL NOT change the confidence threshold at recall level 
+        0 ~ 0.97. Looking at the for loop, it won't even look at the low confidence detections until it gets 
+        past 0.97 since scores are sorted in decreasing order, looking like [previous detections, low 
+        confidence detections].
+        By Case 1 argument, if the best recall is increased even just to 0.98, score improves.
+    Case 3) The detector has 100% recall. We have an even simpler argument. This means all the added boxes
+        won't even make it to the "scores" array since len(scores) <= len(num_gt) always, and here, with
+        recall 100%, we have equality. At the harshest score threshold in scores array, all the added
+        detections should be filtered out.
+'''
 @numba.jit
 def get_thresholds(scores: np.ndarray, num_gt, num_sample_pts=41):
     scores.sort()
@@ -785,23 +851,23 @@ def clean_data(gt_anno, dt_anno, current_class, difficulty, extra_info_single):
             valid_class = 0
         elif (current_cls_name == "Car".lower() and "Undefined".lower() == gt_name): #! don't treat undefined as fp for cars
             valid_class = 0
-        elif (current_cls_name == "Cyclist".lower() and "Motorcycle".lower() == gt_name):
-            valid_class = 0
+        # elif (current_cls_name == "Cyclist".lower() and "Motorcycle".lower() == gt_name):
+        #     valid_class = 0
         else: #! no relationship with current class
             valid_class = -1
 
 
         ignore = False
-        if ((gt_anno["occluded"][i] > MAX_OCCLUSION[difficulty])
-                or (gt_anno["truncated"][i] > MAX_TRUNCATION[difficulty])
-                or (height <= MIN_HEIGHT[difficulty])):
+        # if ((gt_anno["occluded"][i] > MAX_OCCLUSION[difficulty])
+        #         or (gt_anno["truncated"][i] > MAX_TRUNCATION[difficulty])
+        #         or (height <= MIN_HEIGHT[difficulty])):
                 
-            ignore = True
-        
-        # if ((gt_extra_info_single["distance"][i] > MAX_DISTANCE[difficulty])
-        #     or (gt_extra_info_single["num_points"][i] < MIN_POINTS_THRESHOLD)):
-
         #     ignore = True
+        
+        if ((gt_extra_info_single["distance"][i] > MAX_DISTANCE[difficulty])
+            or (gt_extra_info_single["num_points"][i] < MIN_POINTS_THRESHOLD)):
+
+            ignore = True
         
         # if (curr_metric == 0 or curr_metric == 1 or curr_metric == 2): #! 2d bbox or bev
         # # if (1 == 2):
@@ -888,10 +954,10 @@ def clean_data(gt_anno, dt_anno, current_class, difficulty, extra_info_single):
         ! Note that this does still include detections of other classes
         '''
         # or (curr_metric == 2 and dt_extra_info_single["distance"][i] > MAX_DISTANCE[difficulty])
-        # if height < MIN_HEIGHT[difficulty] or (curr_metric == 2 and dt_extra_info_single["distance"][i] > MAX_DISTANCE[difficulty]) :
-        #     ignored_dt.append(1)
-        if height < MIN_HEIGHT[difficulty]:
+        if height < MIN_HEIGHT[difficulty] or (curr_metric == 2 and dt_extra_info_single["distance"][i] > MAX_DISTANCE[difficulty]):
             ignored_dt.append(1)
+        # if height < MIN_HEIGHT[difficulty]:
+        #     ignored_dt.append(1)
         #! detection matches class, keep
         elif valid_class == 1:
             ignored_dt.append(0)
@@ -1262,18 +1328,21 @@ def fused_compute_statistics(overlaps,
             if similarity != -1:
                 pr[t, 3] += similarity
 
-            if t == len(thresholds) - 1: #! just do for last threshold, since last one is smallest
-                gt_box_types.append(gt_box_type)
-                dt_box_types.append(dt_box_type)
-                # print(thresh)
-                # print(gt_box_type)
-                # print(dt_box_type)
-                # print(tp)
-                # print(fp)
-                # print(fn)
-                # print(thresh == 0.05203958600759506)
-                # assert 1 == 2
-                # print(thresh)
+            gt_box_types[t].append(gt_box_type)
+            dt_box_types[t].append(dt_box_type)
+
+            # if t == len(thresholds) - 1: #! just do for last threshold, since last one is smallest
+            #     gt_box_types.append(gt_box_type)
+            #     dt_box_types.append(dt_box_type)
+            #     # print(thresh)
+            #     # print(gt_box_type)
+            #     # print(dt_box_type)
+            #     # print(tp)
+            #     # print(fp)
+            #     # print(fn)
+            #     # print(thresh == 0.05203958600759506)
+            #     # assert 1 == 2
+            #     # print(thresh)
         gt_num += gt_nums[i]
         dt_num += dt_nums[i]
         dc_num += dc_nums[i]
@@ -1413,8 +1482,14 @@ def _prepare_data(gt_annos, dt_annos, current_class, difficulty, extra_info=None
 
     #! Loop through each image
     for i in range(len(gt_annos)):
-        rets = clean_data(gt_annos[i], dt_annos[i], current_class, difficulty, \
-            extra_info_single=(gt_extra_info[i], dt_extra_info[i], general_extra_info))
+        if 'clean_data_function' not in general_extra_info.keys() or general_extra_info['clean_data_function'] == None:
+            rets = clean_data(gt_annos[i], dt_annos[i], current_class, difficulty, \
+                extra_info_single=(gt_extra_info[i], dt_extra_info[i], general_extra_info))
+        else:
+            rets = general_extra_info['clean_data_function'](
+                gt_annos[i], dt_annos[i], current_class, difficulty, \
+                extra_info_single=(gt_extra_info[i], dt_extra_info[i], general_extra_info)
+            )
 
         num_valid_gt, ignored_gt, ignored_det, dc_bboxes = rets
         ignored_gts.append(np.array(ignored_gt, dtype=np.int64))
@@ -1529,8 +1604,8 @@ def eval_class(gt_annos,
         [num_class, num_difficulty, num_minoverlap, N_SAMPLE_PTS])
 
     #! To store gt_box_types, dt_box_types for each class, per difficulty, per num_minoverlap
-    gt_box_typess = np.full((num_class, num_difficulty, num_minoverlap), None, dtype=object)
-    dt_box_typess = np.full((num_class, num_difficulty, num_minoverlap), None, dtype=object)
+    gt_box_typess = np.full((num_class, num_difficulty, num_minoverlap, N_SAMPLE_PTS), None, dtype=object)
+    dt_box_typess = np.full((num_class, num_difficulty, num_minoverlap, N_SAMPLE_PTS), None, dtype=object)
 
 
     aos = np.zeros([num_class, num_difficulty, num_minoverlap, N_SAMPLE_PTS])
@@ -1594,8 +1669,12 @@ def eval_class(gt_annos,
                 
                 #! My addition - stores information about gt/dt boxes (whether ignored, fn, tn, fp)
                 #! ends up being a list of np arrays
-                gt_box_types = []
-                dt_box_types = []
+                #! CHANGED TO SAVE @ EVERY THRESHOLD. Now, should be a 
+                #!  Numpy Array (length N_SAMPLE_PTS), of list (length # of frames), of np arrays (# of objects in each frame)
+                gt_box_types = np.empty(N_SAMPLE_PTS, dtype=object)
+                gt_box_types[...] = [[] for _ in range(N_SAMPLE_PTS)]
+                dt_box_types = np.empty(N_SAMPLE_PTS, dtype=object)
+                dt_box_types[...] = [[] for _ in range(N_SAMPLE_PTS)]
                 #! Again, we're splitting up the dataset into parts and running it in.
                 idx = 0
                 for j, num_part in enumerate(split_parts):
@@ -1628,8 +1707,8 @@ def eval_class(gt_annos,
                         compute_aos=compute_aos)
                     idx += num_part
 
-                gt_box_typess[m, l, k] = gt_box_types
-                dt_box_typess[m, l, k] = dt_box_types
+                gt_box_typess[m, l, k, :] = gt_box_types
+                dt_box_typess[m, l, k, :] = dt_box_types
                 for i in range(len(thresholds)):
                     precision[m, l, k, i] = pr[i, 0] / (pr[i, 0] + pr[i, 1]) #! true pos / (true pos + false pos)
                     recall[m, l, k, i] = pr[i, 0] / (pr[i, 0] + pr[i, 2]) #! true pos / (true pos + false neg)
@@ -1851,7 +1930,7 @@ def kitti_eval(
         "orientation": aos,
         "thresholds": all_thresholds,
         "min_overlaps": min_overlaps,
-        "gt_box_typess": gt_box_typess, # np array shape [num_class, num_difficulty, num_minoverlap], each elem is list
+        "gt_box_typess": gt_box_typess, # np array shape [num_class, num_difficulty, num_minoverlap, N_SAMPLE_PTS], each elem is list
         "dt_box_typess": dt_box_typess
     }
     '''

@@ -35,6 +35,7 @@ class SingleLabel(object):
         self.ymin = split[5] # top
         self.xmax = split[6] # right
         self.ymax = split[7] # bottom
+        self.height2d = self.ymax - self.ymin
         self.box2d = np.array([self.xmin,self.ymin,self.xmax,self.ymax])
         
         # extract 3d bounding box information

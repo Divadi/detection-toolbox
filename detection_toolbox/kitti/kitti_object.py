@@ -2,6 +2,8 @@ import numpy as np
 import cv2
 import os
 
+import functools
+
 from .calibration import Calibration
 from .kitti_label import KittiLabel
 
@@ -211,7 +213,10 @@ class Kitti(object):
         for dt_ind in dt_inds:
             gt = self.get_gt_label(view, dt_ind, filter_truncation_1=gt_filter_truncation_1)
             if num_points_dir is not None:
-                num_points_file_path = os.path.join(num_points_dir, "label_0/{}.txt".format(dt_ind))
+                if functools.reduce(lambda a,b: a or b, map(lambda s: "label" in s, os.listdir(num_points_dir))):
+                    num_points_file_path = os.path.join(num_points_dir, "{}/{}.txt".format(os.listdir(num_points_dir)[0], dt_ind))
+                else:
+                    num_points_file_path = os.path.join(num_points_dir, "{}.txt".format(dt_ind))
                 gt._read_num_points_file_path(num_points_file_path=num_points_file_path)
 
             gt_extra_info.append(gt.get_extra_info())
