@@ -1108,14 +1108,17 @@ def compute_statistics_jit(overlaps,
 
 
     #! My own code ----
-    #! For each gt box, store whether it was -1 (ignored), 0 (false negative (unmatched)), 1 (true positive (matched))
-    gt_box_type = np.full((gt_size, ), -1)
-    #! For each dt box, store whether it was -1 (irrelevant), 0 (false positive (unmatched)), 1 (true positive (matched))
-    #! Note that -1 could mean it was in don't care territory, was of a different class, etc
-    dt_box_type = np.full((det_size, ), -1)
-    #! Stores idx of matched object
-    gt_box_matched_idx = np.full((gt_size, ), -1)
-    dt_box_matched_idx = np.full((det_size, ), -1)
+    extra = {
+        #! For each gt box, store whether it was -1 (ignored), 0 (false negative (unmatched)), 1 (true positive (matched))
+        "gt_box_type": np.full((gt_size, ), -1),
+        #! For each dt box, store whether it was -1 (irrelevant), 0 (false positive (unmatched)), 1 (true positive (matched))
+        #! Note that -1 could mean it was in don't care territory, was of a different class, etc
+        "dt_box_type": np.full((det_size, ), -1),
+        #! Stores idx of matched object
+        "gt_box_matched_idx": np.full((gt_size, ), -1),
+        "dt_box_matched_idx": np.full((det_size, ), -1)
+    }
+   
 
     #! loop over gt boxes
     for i in range(gt_size):
@@ -1175,7 +1178,7 @@ def compute_statistics_jit(overlaps,
         #! If we couldn't match this gt to anything and it's something we care about, it's a false negative.
         if (valid_detection == NO_DETECTION) and ignored_gt[i] == 0:
             fn += 1
-            gt_box_type[i] = 0
+            extra['gt_box_type'][i] = 0
 
         #! If we did match this gt to something and
         #!  (gt is something we don't care about or det is something we don't care about)
@@ -1183,8 +1186,8 @@ def compute_statistics_jit(overlaps,
         elif ((valid_detection != NO_DETECTION)
               and (ignored_gt[i] == 1 or ignored_det[det_idx] == 1 )):
             assigned_detection[det_idx] = True
-            gt_box_type[i] = -1
-            dt_box_type[det_idx] = -1
+            extra['gt_box_type'][i] = -1
+            extra['dt_box_type'][det_idx] = -1
 
         #! If we did match this gt to something and
         #!  the remaining condition is: (gt is something we care about and det is something we care about)
@@ -1193,10 +1196,10 @@ def compute_statistics_jit(overlaps,
         #! Then, assign detection True
         elif valid_detection != NO_DETECTION:
             # only a tp add a threshold.
-            gt_box_type[i] = 1
-            dt_box_type[det_idx] = 1
-            gt_box_matched_idx[i] = det_idx
-            dt_box_matched_idx[det_idx] = i
+            extra['gt_box_type'][i] = 1
+            extra['dt_box_type'][det_idx] = 1
+            extra['gt_box_matched_idx'][i] = det_idx
+            extra['dt_box_matched_idx'][det_idx] = i
             tp += 1
             # thresholds.append(dt_scores[det_idx])
             thresholds[thresh_idx] = dt_scores[det_idx]
@@ -1209,7 +1212,7 @@ def compute_statistics_jit(overlaps,
             assigned_detection[det_idx] = True
         #! This should be when there is no detection and  gt is something we don't care about
         else:
-            gt_box_type[i] = -1
+            extra['gt_box_type'][i] = -1
 
 
     
@@ -1226,7 +1229,7 @@ def compute_statistics_jit(overlaps,
             if (not (assigned_detection[i] or ignored_det[i] == -1
                      or ignored_det[i] == 1 or ignored_threshold[i])):
                 fp += 1
-                dt_box_type[i] = 0 #! false positive!
+                extra['dt_box_type'][i] = 0 #! false positive!
 
         #! I believe this is the number of detections we harvest from don't care regions. We'll subtract it from fp.
         nstuff = 0
@@ -1248,7 +1251,7 @@ def compute_statistics_jit(overlaps,
                     if overlaps_dt_dc[j, i] > min_overlap:
                         assigned_detection[j] = True
                         nstuff += 1
-                        dt_box_type[j] = -1 #! nvm, don't care about this one
+                        extra['dt_box_type'][j] = -1 #! nvm, don't care about this one
         #! take nstuff away from fp.
         fp -= nstuff
 
@@ -1273,8 +1276,7 @@ def compute_statistics_jit(overlaps,
     !   thresholds[:thresh_idx] == thresholds
     !   So basically, we have to tools to calculate recall and the scores of the matched dts.
     '''
-    return tp, fp, fn, similarity, thresholds[:thresh_idx], \
-        (gt_box_type, dt_box_type, gt_box_matched_idx, dt_box_matched_idx)
+    return tp, fp, fn, similarity, thresholds[:thresh_idx], extra
 
 
 def get_split_parts(num, num_part):
@@ -1700,7 +1702,7 @@ def eval_class(gt_annos,
 
                 #! Again, we're splitting up the dataset into parts and running it in.
                 idx = 0
-                # start_time = time.time()
+                start_time = time.time()
                 for j, num_part in enumerate(split_parts):
                     gt_datas_part = np.concatenate(
                         gt_datas_list[idx:idx + num_part], 0)
@@ -1729,7 +1731,7 @@ def eval_class(gt_annos,
                         extras=extras,
                         compute_aos=compute_aos)
                     idx += num_part
-                # print(time.time() - start_time)
+                print(time.time() - start_time)
 
                 extrass['gt_box_typess'][m, l, k, :] = extras['gt_box_types']
                 extrass['dt_box_typess'][m, l, k, :] = extras['dt_box_types']
@@ -1903,7 +1905,6 @@ Args:
         or (# overall evaluation levels, 3, len(current_classes)). Same as above but the first dimension denotes the number
         of overall rounds of evaluation we do. For reference, the first case is puffed up to (1, 3, len(current_classes)).
     recall_positions_40: Whether to use 40 recall positions or 11. Default 40, because KITTI is 40
-    eval_modes: List of modes to evaluate. 0 for bbox, 1 for bev, 2 for 3d
 '''
 def kitti_eval(
     gt_annos,
@@ -1911,8 +1912,7 @@ def kitti_eval(
     extra_info,
     current_classes,
     IoUs,
-    recall_positions_40=True,
-    eval_modes=[0, 1, 2]
+    recall_positions_40=True 
 ):
     try:
         assert len(gt_annos) == len(dt_annos)
@@ -1940,12 +1940,11 @@ def kitti_eval(
     current_classes = list(range(len(current_classes))) #! Change to numbers
 
     compute_aos = False
-    if 0 in eval_modes: # only even consider computing aos if bbox is one of the things computed
-        for anno in dt_annos:
-            if anno['alpha'].shape[0] != 0:
-                if anno['alpha'][0] != -10:
-                    compute_aos = True
-                break
+    for anno in dt_annos:
+        if anno['alpha'].shape[0] != 0:
+            if anno['alpha'][0] != -10:
+                compute_aos = True
+            break
 
     '''
     metrics: {
@@ -1966,15 +1965,13 @@ def kitti_eval(
         "dt_box_matched_idx": dt_box_matched_idx
     }
     '''
-    eval_types = ["bbox", "bev", "3d"]
     metrics = do_eval_v3(
         gt_annos,
         dt_annos,
         current_classes,
         min_overlaps=IoUs,
         compute_aos=compute_aos,
-        extra_info=extra_info,
-        eval_modes=eval_modes
+        extra_info=extra_info
     )
     dprint("Done generating metrics.")
 
@@ -1989,16 +1986,18 @@ def kitti_eval(
         # mAP threshold array: [num_minoverlap, metric, class]
         # mAP result: [num_class, num_diff, num_minoverlap]
         for i in range(IoUs.shape[0]):
+            mAPbbox = get_mAP(metrics["bbox"]["precision"][j, :, i])
+            mAPbbox = ", ".join(f"{v:.2f}" for v in mAPbbox) # ! This is what we care about
+            mAPbev = get_mAP(metrics["bev"]["precision"][j, :, i])
+            mAPbev = ", ".join(f"{v:.2f}" for v in mAPbev)
+            mAP3d = get_mAP(metrics["3d"]["precision"][j, :, i])
+            mAP3d = ", ".join(f"{v:.2f}" for v in mAP3d)
             result += print_str(
                 (f"{class_to_name[curcls]} "
                  "AP(Average Precision)@{:.2f}, {:.2f}, {:.2f}:".format(*IoUs[i, :, j])))
-            for mode in eval_modes:
-                eval_type = eval_types[mode]
-                result += print_str("{:4} AP: {}".format(
-                    eval_type,
-                    ", ".join(f"{v:.2f}" for v in get_mAP(metrics[eval_type]["precision"][j, :, i]))
-                ))
-
+            result += print_str(f"bbox AP:{mAPbbox}")
+            result += print_str(f"bev  AP:{mAPbev}")
+            result += print_str(f"3d   AP:{mAP3d}")
             if compute_aos:
                 mAPaos = get_mAP(metrics["bbox"]["orientation"][j, :, i])
                 mAPaos = ", ".join(f"{v:.2f}" for v in mAPaos)

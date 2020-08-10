@@ -1,6 +1,7 @@
 import numpy as np
 import imgaug
 from imgaug.augmentables.bbs import BoundingBox, BoundingBoxesOnImage
+import math
 
 class SingleLabel(object):
     # __slots__ = ['gt', 'garbage', 'type', 'truncation', 'occlusion', 'alpha',
@@ -43,6 +44,10 @@ class SingleLabel(object):
         self.w = split[9] # box width
         self.l = split[10] # box length (in meters)
         self.t = (split[11],split[12],split[13]) # location (x,y,z) in rect. camera coord.
+        self.tx = self.t[0]
+        self.ty = self.t[1]
+        self.tz = self.t[2]
+
         self.ry = split[14] # yaw angle (around Y-axis in rect. camera coordinates) [-pi..pi]
 
         if len(split) == 16:

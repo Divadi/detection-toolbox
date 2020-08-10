@@ -12,7 +12,8 @@ def draw_2d_boxes_from_objects_advanced(
 	img,
 	default_color=(0, 1, 0), #! default color is green
 	color_func=None,
-	text_func=None
+	text_func=None,
+	size=3
 ):
 	color_dict = dict()
 
@@ -44,6 +45,6 @@ def draw_2d_boxes_from_objects_advanced(
 	for color, val in color_dict.items():
 		bboxes = BoundingBoxesOnImage(val['boxes'], shape=img.shape[:2])
 		#! flip color tuple b/c img is bgr and provided color is rgb
-		img = bboxes.draw_on_image(img, color=tuple(int(i * 255) for i in color)[::-1], size=3) 
+		img = bboxes.draw_on_image(img, color=tuple(int(i * 255) for i in color)[::-1], size=size) 
 
 	return img

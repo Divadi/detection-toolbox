@@ -65,7 +65,7 @@ class Kitti(object):
         if self.dt_label_dir is None:
             raise Exception("dt_label_dir not provided")
         elif view is None:
-            return KittiLabel(os.path.join(self.dt_label_dir, str(idx).zfill(6) + ".txt"), idx=idx)
+            return KittiLabel(os.path.join(self.dt_label_dir, str(idx).zfill(6) + ".txt"), view=None, gt=False, idx=idx)
         else:
             return KittiLabel(
                 os.path.join(
@@ -125,9 +125,13 @@ class Kitti(object):
             return sorted(each_ind_set[0])
     
     #! Returns dt inds
-    def get_dt_inds(self):
+    #! if direct_dir is true, doesn't need directory to have label_0, label_1, etc.
+    def get_dt_inds(self, direct_dir=False):
         if self.dt_label_dir is None:
             raise Exception("dt_label_dir not provided")
+        elif direct_dir:
+            inds = list(map(lambda s: s[:-4], os.listdir(self.dt_label_dir)))
+            return sorted(inds)
         else:
             dt_label_sub_dirs = os.listdir(self.dt_label_dir) #! label_0, label_1, ...
             dt_label_sub_dirs = list(filter(lambda s: "label_" in s, dt_label_sub_dirs))

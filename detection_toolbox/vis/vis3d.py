@@ -235,11 +235,10 @@ def draw_boxes_3d(box3d, fig, box_color=(1,1,1), text_color=(1,0,0), text_scale=
 	return fig
 
 
-def set_view(fig, azimuth, elevation, distance):
+def set_view(fig, azimuth, elevation, distance, focalpoint=[0, 0, 0]):
 	from mayavi import mlab
 	mlab.options.offscreen = True
 	#! view
-	focalpoint = [0, 0, 0]
 	mlab.view(
 		azimuth=azimuth,
 		elevation=elevation,
